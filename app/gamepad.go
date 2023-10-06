@@ -23,6 +23,7 @@ func newGamepad(index int) *Gamepad {
 		isDirty:     true,
 		isConnected: false,
 		isSupported: false,
+		isSteering:  false,
 
 		deadzoneStick:   0.1,
 		deadzoneTrigger: 0.0,
@@ -35,6 +36,7 @@ type Gamepad struct {
 	isDirty     bool
 	isConnected bool
 	isSupported bool
+	isSteering  bool
 
 	deadzoneStick   float64
 	deadzoneTrigger float64
@@ -226,33 +228,47 @@ func (g *Gamepad) refresh() {
 	g.isDirty = false
 	g.isConnected = !jsGamepad.IsUndefined() && !jsGamepad.IsNull() && jsGamepad.Get("connected").Bool()
 	if g.isConnected {
-		g.isSupported = jsGamepad.Get("mapping").String() == "standard"
+		g.isSupported = true
+		g.isSteering = jsGamepad.Get("mapping").String() != "standard"
+		g.deadzoneStick = 0.001
 	} else {
 		g.isSupported = false
 	}
 	if g.isSupported {
 		axes := jsGamepad.Get("axes")
 		buttons := jsGamepad.Get("buttons")
-		g.leftStickX = axes.Index(0).Float()
-		g.leftStickY = axes.Index(1).Float()
+		g.leftStickX = axes.Index(0).Float() // steering
 		g.leftStickButton = buttons.Index(10).Get("pressed").Bool()
-		g.rightStickX = axes.Index(2).Float()
-		g.rightStickY = axes.Index(3).Float()
-		g.rightStickButton = buttons.Index(11).Get("pressed").Bool()
-		g.leftBumperButton = buttons.Index(4).Get("pressed").Bool()
-		g.leftTrigger = buttons.Index(6).Get("value").Float()
-		g.rightBumperButton = buttons.Index(5).Get("pressed").Bool()
-		g.rightTrigger = buttons.Index(7).Get("value").Float()
-		g.dpadLeftButton = buttons.Index(14).Get("pressed").Bool()
-		g.dpadRightButton = buttons.Index(15).Get("pressed").Bool()
-		g.dpadUpButton = buttons.Index(12).Get("pressed").Bool()
-		g.dpadDownButton = buttons.Index(13).Get("pressed").Bool()
-		g.actionLeftButton = buttons.Index(2).Get("pressed").Bool()
-		g.actionRightButton = buttons.Index(1).Get("pressed").Bool()
-		g.actionUpButton = buttons.Index(3).Get("pressed").Bool()
-		g.actionDownButton = buttons.Index(0).Get("pressed").Bool()
-		g.forwardButton = buttons.Index(9).Get("pressed").Bool()
-		g.backButton = buttons.Index(8).Get("pressed").Bool()
+		if !g.isSteering {
+			g.leftStickY = axes.Index(1).Float()
+			g.rightStickX = axes.Index(2).Float()
+			g.rightStickY = axes.Index(3).Float()
+			g.leftTrigger = buttons.Index(6).Get("value").Float()
+			g.rightTrigger = buttons.Index(7).Get("value").Float()
+			g.actionLeftButton = buttons.Index(2).Get("pressed").Bool()
+			g.actionDownButton = buttons.Index(0).Get("pressed").Bool()
+			g.rightStickButton = buttons.Index(11).Get("pressed").Bool()
+			g.leftBumperButton = buttons.Index(4).Get("pressed").Bool()
+			g.rightBumperButton = buttons.Index(5).Get("pressed").Bool()
+			g.dpadLeftButton = buttons.Index(14).Get("pressed").Bool()
+			g.dpadRightButton = buttons.Index(15).Get("pressed").Bool()
+			g.dpadUpButton = buttons.Index(12).Get("pressed").Bool()
+			g.dpadDownButton = buttons.Index(13).Get("pressed").Bool()
+			g.actionRightButton = buttons.Index(1).Get("pressed").Bool()
+			g.actionUpButton = buttons.Index(3).Get("pressed").Bool()
+			g.forwardButton = buttons.Index(9).Get("pressed").Bool()
+			g.backButton = buttons.Index(8).Get("pressed").Bool()
+		} else {
+			g.leftStickY = 0.0  // axes.Index(1).Float()
+			g.rightStickX = 0.0 // axes.Index(2).Float() side-brake
+			g.rightStickY = 0.0 // axes.Index(3).Float() clutch
+			brake := (axes.Index(1).Float() + 0.8) / (0.85 * 2)
+			g.leftTrigger = dprec.Clamp(brake, 0.0, 1.0)                 // brake
+			g.rightTrigger = (axes.Index(4).Float() + 1) / 2             // throttle
+			g.actionDownButton = buttons.Index(12).Get("pressed").Bool() // Drive
+			g.actionLeftButton = buttons.Index(13).Get("pressed").Bool() // Reverse
+			g.actionUpButton = buttons.Index(17).Get("pressed").Bool()   // Recover
+		}
 	} else {
 		g.leftStickX = 0.0
 		g.leftStickY = 0.0
