@@ -1,4 +1,4 @@
-//go:build !ffb && !dfp
+//go:build dfp
 
 package app
 
@@ -26,7 +26,7 @@ func newGamepad(index int) *Gamepad {
 		isConnected: false,
 		isSupported: false,
 
-		deadzoneStick:   0.1,
+		deadzoneStick:   0.0,
 		deadzoneTrigger: 0.0,
 	}
 }
@@ -228,34 +228,11 @@ func (g *Gamepad) refresh() {
 	g.isDirty = false
 	g.isConnected = !jsGamepad.IsUndefined() && !jsGamepad.IsNull() && jsGamepad.Get("connected").Bool()
 	if g.isConnected {
-		g.isSupported = jsGamepad.Get("mapping").String() == "standard"
+		g.isSupported = true
 	} else {
 		g.isSupported = false
 	}
-	if g.isSupported {
-		axes := jsGamepad.Get("axes")
-		buttons := jsGamepad.Get("buttons")
-		g.leftStickX = axes.Index(0).Float()
-		g.leftStickY = axes.Index(1).Float()
-		g.leftStickButton = buttons.Index(10).Get("pressed").Bool()
-		g.rightStickX = axes.Index(2).Float()
-		g.rightStickY = axes.Index(3).Float()
-		g.rightStickButton = buttons.Index(11).Get("pressed").Bool()
-		g.leftBumperButton = buttons.Index(4).Get("pressed").Bool()
-		g.leftTrigger = buttons.Index(6).Get("value").Float()
-		g.rightBumperButton = buttons.Index(5).Get("pressed").Bool()
-		g.rightTrigger = buttons.Index(7).Get("value").Float()
-		g.dpadLeftButton = buttons.Index(14).Get("pressed").Bool()
-		g.dpadRightButton = buttons.Index(15).Get("pressed").Bool()
-		g.dpadUpButton = buttons.Index(12).Get("pressed").Bool()
-		g.dpadDownButton = buttons.Index(13).Get("pressed").Bool()
-		g.actionLeftButton = buttons.Index(2).Get("pressed").Bool()
-		g.actionRightButton = buttons.Index(1).Get("pressed").Bool()
-		g.actionUpButton = buttons.Index(3).Get("pressed").Bool()
-		g.actionDownButton = buttons.Index(0).Get("pressed").Bool()
-		g.forwardButton = buttons.Index(9).Get("pressed").Bool()
-		g.backButton = buttons.Index(8).Get("pressed").Bool()
-	} else {
+	if !g.isSupported {
 		g.leftStickX = 0.0
 		g.leftStickY = 0.0
 		g.leftStickButton = false
@@ -276,7 +253,80 @@ func (g *Gamepad) refresh() {
 		g.actionDownButton = false
 		g.forwardButton = false
 		g.backButton = false
+		return
 	}
+	axes := jsGamepad.Get("axes")
+	buttons := jsGamepad.Get("buttons")
+	g.leftStickX = axes.Index(0).Float()                         // steering
+	g.leftStickY = 0.0                                           //
+	g.rightStickX = 0.0                                          //
+	g.rightStickY = 0.0                                          //
+	g.leftTrigger = (1 - axes.Index(5).Float()) / 2              // brake
+	g.rightTrigger = (1 - axes.Index(2).Float()) / 2             // throttle
+	g.actionLeftButton = buttons.Index(12).Get("pressed").Bool() // Reverse
+	g.actionRightButton = false                                  // unuse
+	g.actionDownButton = buttons.Index(13).Get("pressed").Bool() // Drive
+	g.actionUpButton = buttons.Index(3).Get("pressed").Bool()    // Recover
+	g.leftStickButton = buttons.Index(11).Get("pressed").Bool()
+	g.rightStickButton = buttons.Index(10).Get("pressed").Bool()
+	g.leftBumperButton = buttons.Index(7).Get("pressed").Bool()
+	g.rightBumperButton = buttons.Index(6).Get("pressed").Bool()
+	g.dpadUpButton = false
+	g.dpadLeftButton = false
+	g.dpadDownButton = false
+	g.dpadRightButton = false
+	/*
+		dpad := axes.Index(9).Float()
+		switch {
+		case dpad > 1.1:
+			g.dpadUpButton = false
+			g.dpadLeftButton = false
+			g.dpadDownButton = false
+			g.dpadRightButton = false
+		case dpad > 0.9:
+			g.dpadUpButton = true
+			g.dpadLeftButton = true
+			g.dpadDownButton = false
+			g.dpadRightButton = false
+		case dpad > 0.6:
+			g.dpadUpButton = false
+			g.dpadLeftButton = true
+			g.dpadDownButton = false
+			g.dpadRightButton = false
+		case dpad > 0.3:
+			g.dpadUpButton = false
+			g.dpadLeftButton = true
+			g.dpadDownButton = true
+			g.dpadRightButton = false
+		case dpad > 0.0:
+			g.dpadUpButton = false
+			g.dpadLeftButton = false
+			g.dpadDownButton = true
+			g.dpadRightButton = false
+		case dpad > -0.3:
+			g.dpadUpButton = false
+			g.dpadLeftButton = false
+			g.dpadDownButton = true
+			g.dpadRightButton = true
+		case dpad > -0.6:
+			g.dpadUpButton = false
+			g.dpadLeftButton = false
+			g.dpadDownButton = false
+			g.dpadRightButton = true
+		case dpad > -0.9:
+			g.dpadUpButton = true
+			g.dpadLeftButton = false
+			g.dpadDownButton = false
+			g.dpadRightButton = true
+		default:
+			g.dpadUpButton = true
+			g.dpadLeftButton = false
+			g.dpadDownButton = false
+			g.dpadRightButton = false
+		}
+	*/
+	g.forwardButton = buttons.Index(2).Get("pressed").Bool()
+	g.backButton = buttons.Index(0).Get("pressed").Bool()
 }
 
 func deadzoneValue(value, deadzone float64) float64 {
