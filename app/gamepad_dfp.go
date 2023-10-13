@@ -3,7 +3,10 @@
 package app
 
 import (
+	"encoding/binary"
+	"log"
 	"math"
+	"sync"
 	"syscall/js"
 	"time"
 
@@ -19,7 +22,7 @@ import (
 // Shame...
 
 func newGamepad(index int) *Gamepad {
-	return &Gamepad{
+	g := &Gamepad{
 		index: index,
 
 		isDirty:     true,
@@ -29,10 +32,16 @@ func newGamepad(index int) *Gamepad {
 		deadzoneStick:   0.0,
 		deadzoneTrigger: 0.0,
 	}
+	g.connect = sync.OnceFunc(g.initialize)
+	return g
 }
 
 type Gamepad struct {
 	index int
+
+	connect func()
+	device  js.Value
+	pulse   chan float64
 
 	isDirty     bool
 	isConnected bool
@@ -192,141 +201,32 @@ func (g *Gamepad) BackButton() bool {
 }
 
 func (g *Gamepad) Pulse(intensity float64, duration time.Duration) {
-	jsGamepad := g.jsGamepad()
-	if jsGamepad.IsUndefined() || jsGamepad.IsNull() {
-		return
-	}
-	jsActuator := jsGamepad.Get("vibrationActuator")
-	if jsActuator.IsUndefined() || jsActuator.IsNull() {
-		return
-	}
-	jsActuator.Call("playEffect", "dual-rumble", map[string]any{
-		"startDelay":      0,
-		"duration":        duration.Milliseconds(),
-		"weakMagnitude":   intensity,
-		"strongMagnitude": intensity,
-	})
+	g.pulse <- intensity
 }
 
 func (g *Gamepad) markDirty() {
 	g.isDirty = true
 }
 
-func (g *Gamepad) jsGamepad() js.Value {
-	jsGamepads := js.Global().Get("navigator").Call("getGamepads")
-	if jsGamepads.IsUndefined() || jsGamepads.IsNull() {
-		return js.Null()
+func (g *Gamepad) hidDevice() js.Value {
+	if g.device.IsUndefined() || g.device.IsNull() {
+		g.connect()
 	}
-	return jsGamepads.Index(g.index)
+	return g.device
 }
 
 func (g *Gamepad) refresh() {
 	if !g.isDirty {
 		return
 	}
-	jsGamepad := g.jsGamepad()
+	device := g.hidDevice()
 	g.isDirty = false
-	g.isConnected = !jsGamepad.IsUndefined() && !jsGamepad.IsNull() && jsGamepad.Get("connected").Bool()
+	g.isConnected = !device.IsUndefined() && !device.IsNull()
 	if g.isConnected {
 		g.isSupported = true
 	} else {
 		g.isSupported = false
 	}
-	if !g.isSupported {
-		g.leftStickX = 0.0
-		g.leftStickY = 0.0
-		g.leftStickButton = false
-		g.rightStickX = 0.0
-		g.rightStickY = 0.0
-		g.rightStickButton = false
-		g.leftBumperButton = false
-		g.leftTrigger = 0.0
-		g.rightBumperButton = false
-		g.rightTrigger = 0.0
-		g.dpadLeftButton = false
-		g.dpadRightButton = false
-		g.dpadUpButton = false
-		g.dpadDownButton = false
-		g.actionLeftButton = false
-		g.actionRightButton = false
-		g.actionUpButton = false
-		g.actionDownButton = false
-		g.forwardButton = false
-		g.backButton = false
-		return
-	}
-	axes := jsGamepad.Get("axes")
-	buttons := jsGamepad.Get("buttons")
-	g.leftStickX = axes.Index(0).Float()                         // steering
-	g.leftStickY = 0.0                                           //
-	g.rightStickX = 0.0                                          //
-	g.rightStickY = 0.0                                          //
-	g.leftTrigger = (1 - axes.Index(5).Float()) / 2              // brake
-	g.rightTrigger = (1 - axes.Index(2).Float()) / 2             // throttle
-	g.actionLeftButton = buttons.Index(12).Get("pressed").Bool() // Reverse
-	g.actionRightButton = false                                  // unuse
-	g.actionDownButton = buttons.Index(13).Get("pressed").Bool() // Drive
-	g.actionUpButton = buttons.Index(3).Get("pressed").Bool()    // Recover
-	g.leftStickButton = buttons.Index(11).Get("pressed").Bool()
-	g.rightStickButton = buttons.Index(10).Get("pressed").Bool()
-	g.leftBumperButton = buttons.Index(7).Get("pressed").Bool()
-	g.rightBumperButton = buttons.Index(6).Get("pressed").Bool()
-	g.dpadUpButton = false
-	g.dpadLeftButton = false
-	g.dpadDownButton = false
-	g.dpadRightButton = false
-	/*
-		dpad := axes.Index(9).Float()
-		switch {
-		case dpad > 1.1:
-			g.dpadUpButton = false
-			g.dpadLeftButton = false
-			g.dpadDownButton = false
-			g.dpadRightButton = false
-		case dpad > 0.9:
-			g.dpadUpButton = true
-			g.dpadLeftButton = true
-			g.dpadDownButton = false
-			g.dpadRightButton = false
-		case dpad > 0.6:
-			g.dpadUpButton = false
-			g.dpadLeftButton = true
-			g.dpadDownButton = false
-			g.dpadRightButton = false
-		case dpad > 0.3:
-			g.dpadUpButton = false
-			g.dpadLeftButton = true
-			g.dpadDownButton = true
-			g.dpadRightButton = false
-		case dpad > 0.0:
-			g.dpadUpButton = false
-			g.dpadLeftButton = false
-			g.dpadDownButton = true
-			g.dpadRightButton = false
-		case dpad > -0.3:
-			g.dpadUpButton = false
-			g.dpadLeftButton = false
-			g.dpadDownButton = true
-			g.dpadRightButton = true
-		case dpad > -0.6:
-			g.dpadUpButton = false
-			g.dpadLeftButton = false
-			g.dpadDownButton = false
-			g.dpadRightButton = true
-		case dpad > -0.9:
-			g.dpadUpButton = true
-			g.dpadLeftButton = false
-			g.dpadDownButton = false
-			g.dpadRightButton = true
-		default:
-			g.dpadUpButton = true
-			g.dpadLeftButton = false
-			g.dpadDownButton = false
-			g.dpadRightButton = false
-		}
-	*/
-	g.forwardButton = buttons.Index(2).Get("pressed").Bool()
-	g.backButton = buttons.Index(0).Get("pressed").Bool()
 }
 
 func deadzoneValue(value, deadzone float64) float64 {
@@ -341,4 +241,115 @@ func deadzoneValue(value, deadzone float64) float64 {
 		value = value - deadzone
 		return value / (1.0 - deadzone)
 	}
+}
+
+const (
+	vendorId  = 0x046d
+	productId = 0xc298
+)
+
+var (
+	alert = js.Global().Get("alert")
+	hid   = js.Global().Get("navigator").Get("hid")
+)
+
+func (g *Gamepad) rxInputReport(this js.Value, args []js.Value) any {
+	ev := args[0]
+	id := ev.Get("reportId").Int()
+	b := JS2Bytes(ev.Get("data"))
+	switch id {
+	case 0:
+		head := binary.LittleEndian.Uint16(b[0:2])
+		g.leftStickX = float64(int16(head&0x3fff)-0x2000) / 0x2000
+		g.actionLeftButton = head&0x8000 != 0
+		g.actionDownButton = head&0x4000 != 0
+		g.actionUpButton = b[2]&0x02 != 0
+		g.actionRightButton = b[2]&0x01 != 0
+		g.leftTrigger = dprec.Clamp(float64(240-int16(b[6]))/240, float64(0), float64(1))
+		g.rightTrigger = dprec.Clamp(float64(240-int16(b[5]))/240, float64(0), float64(1))
+		hat := b[3] >> 4
+		g.dpadUpButton = hat == 0 || hat == 1 || hat == 7
+		g.dpadRightButton = hat == 1 || hat == 2 || hat == 3
+		g.dpadDownButton = hat == 3 || hat == 4 || hat == 5
+		g.dpadLeftButton = hat == 5 || hat == 6 || hat == 7
+		g.forwardButton = b[3]&0x08 != 0
+		g.backButton = b[3]&0x04 != 0
+		//log.Printf("rx: %x/%x, s=%4.1f", id, b, g.leftStickX)
+	default:
+		log.Printf("rx: %x/%x, s=%4.1f", id, b, g.leftStickX)
+	}
+	return nil
+}
+
+func (g *Gamepad) initialize() {
+	log.Println("connecting...")
+	go func() {
+		devices, err := Await(hid.Call("getDevices"))
+		if err != nil {
+			alert.Invoke(err.Error())
+			g.device = js.Null()
+			return
+		}
+		log.Println(devices)
+		fn := js.FuncOf(func(this js.Value, args []js.Value) any {
+			return args[0].Get("vendorId").Int() == vendorId && args[0].Get("productId").Int() == productId
+		})
+		dev := devices.Call("find", fn)
+		fn.Release()
+		if dev.IsNull() || dev.IsUndefined() {
+			alert.Invoke(err.Error())
+			g.device = js.Null()
+			return
+		}
+		if !dev.Get("opened").Bool() {
+			if _, err := Await(dev.Call("open")); err != nil {
+				alert.Invoke(err.Error())
+				return
+			}
+		}
+		dev.Call("addEventListener", "inputreport", js.FuncOf(g.rxInputReport))
+		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})))
+		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0xfe, 0x0d, 0x0c, 0x0c, 0x80, 0x00, 0x00})))
+		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x11, 0x08, 0x80, 0x80, 0x00, 0x00, 0x00})))
+		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x21, 0x0c, 0x01, 0x00, 0x01, 0x00, 0x01})))
+		//Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})))
+		g.pulse = make(chan float64, 16)
+		go func() {
+			for v := range g.pulse {
+				v := byte(uint(dprec.Clamp(v*128+128, float64(0), float64(255))))
+				Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x11, 0x08, v, 0x80, 0x00, 0x00, 0x00})))
+			}
+		}()
+		g.device = dev
+		log.Println("connect:", g.device.Get("productName"))
+	}()
+}
+
+func GamepadConnect() {
+	devices, err := Await(hid.Call("getDevices"))
+	if err != nil {
+		alert.Invoke(err.Error())
+		return
+	}
+	fn := js.FuncOf(func(this js.Value, args []js.Value) any {
+		return args[0].Get("vendorId").Int() == vendorId && args[0].Get("productId").Int() == productId
+	})
+	dev := devices.Call("find", fn)
+	fn.Release()
+	if dev.IsNull() || dev.IsUndefined() {
+		devices, err := Await(hid.Call("requestDevice", map[string]any{
+			"filters": []any{map[string]any{"productId": productId, "vendorId": vendorId}}}))
+		if err != nil {
+			alert.Invoke(err.Error())
+			return
+		}
+		if devices.Length() > 0 {
+			dev = devices.Index(0)
+		}
+	}
+	if dev.IsNull() || dev.IsUndefined() {
+		alert.Invoke("No device found")
+		return
+	}
+	log.Println(dev.Get("productName").String())
 }
