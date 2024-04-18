@@ -1,4 +1,4 @@
-//go:build !ffb && !dfp
+//go:build !diy && !dfp
 
 package app
 
