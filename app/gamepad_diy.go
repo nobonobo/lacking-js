@@ -290,12 +290,12 @@ func (g *Gamepad) rxInputReport2(this js.Value, args []js.Value) any {
 			binary.LittleEndian.Uint16(b[8:10]), // Axis3: Brake
 		}
 		g.leftTrigger = dprec.Clamp((float64(axises[3])-8000)/40000, float64(0), float64(1))
-		g.rightTrigger = dprec.Clamp((float64(axises[1])-4000)/50000, float64(0), float64(1))
+		g.rightTrigger = dprec.Clamp((float64(axises[1])-8000)/50000, float64(0), float64(1))
 		g.leftStickY = dprec.Clamp((float64(axises[0])-8000)/30000, float64(0), float64(1))
 		g.forwardButton = pad == 0
 		g.backButton = pad == 4
 		g.actionUpButton = dprec.Clamp(float64(axises[2])-8000/40000, float64(0), float64(1)) > 0.5
-		//log.Printf("rx: %d:%x/%d/%d/%d %x", id, buttons, pad, axises[3], axises[1], b)
+		//log.Printf("rx: %d:%x/%d/%d %x", id, pad, axises[3], axises[1], b)
 	default:
 		log.Printf("rx: %x/%x", id, b)
 	}
