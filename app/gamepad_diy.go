@@ -14,6 +14,8 @@ import (
 	"github.com/mokiat/lacking/app"
 )
 
+const ForceRate = 0.15
+
 // NOTE: Chrome does not follow the specification and the Gamepad object
 // reference cannot be stored and reused. It contains a snapshot of some
 // state which does not get updated. This makes using the connect and disconnect
@@ -202,7 +204,7 @@ func (g *Gamepad) BackButton() bool {
 }
 
 func (g *Gamepad) Pulse(intensity float64, duration time.Duration) {
-	g.pulse <- intensity
+	g.pulse <- dprec.Clamp(intensity, -1, 1) * ForceRate
 }
 
 func (g *Gamepad) markDirty() {
@@ -374,11 +376,11 @@ func (g *Gamepad) initialize() {
 	}()
 }
 
-func GamepadConnect() {
+func GetGamepad() js.Value {
 	devices, err := Await(hid.Call("getDevices"))
 	if err != nil {
 		alert.Invoke(err.Error())
-		return
+		return js.Null()
 	}
 	fn := js.FuncOf(func(this js.Value, args []js.Value) any {
 		return args[0].Get("vendorId").Int() == vendorId1 && args[0].Get("productId").Int() == productId1
@@ -386,6 +388,14 @@ func GamepadConnect() {
 	dev := devices.Call("find", fn)
 	fn.Release()
 	if dev.IsNull() || dev.IsUndefined() {
+		return js.Null()
+	}
+	return dev
+}
+
+func GamepadConnect() {
+	dev := GetGamepad()
+	if dev.IsNull() {
 		devices, err := Await(hid.Call("requestDevice", map[string]any{
 			"filters": []any{
 				map[string]any{"productId": productId1, "vendorId": vendorId1},
@@ -398,7 +408,7 @@ func GamepadConnect() {
 			dev = devices.Index(0)
 		}
 	}
-	if dev.IsNull() || dev.IsUndefined() {
+	if dev.IsNull() {
 		alert.Invoke("No device found")
 		return
 	}

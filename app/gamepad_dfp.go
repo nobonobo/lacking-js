@@ -14,6 +14,8 @@ import (
 	"github.com/mokiat/lacking/app"
 )
 
+const ForceRate = 1.0
+
 // NOTE: Chrome does not follow the specification and the Gamepad object
 // reference cannot be stored and reused. It contains a snapshot of some
 // state which does not get updated. This makes using the connect and disconnect
@@ -201,7 +203,7 @@ func (g *Gamepad) BackButton() bool {
 }
 
 func (g *Gamepad) Pulse(intensity float64, duration time.Duration) {
-	g.pulse <- intensity
+	g.pulse <- dprec.Clamp(intensity, -1, 1) * ForceRate
 }
 
 func (g *Gamepad) markDirty() {
@@ -274,6 +276,10 @@ func (g *Gamepad) rxInputReport(this js.Value, args []js.Value) any {
 		g.dpadLeftButton = hat == 5 || hat == 6 || hat == 7
 		g.forwardButton = b[3]&0x08 != 0
 		g.backButton = b[3]&0x04 != 0
+		g.leftStickY = 0.0
+		if b[2]&0x01 != 0 {
+			g.leftStickY = 1.0
+		}
 		//log.Printf("rx: %x/%x, s=%4.1f", id, b, g.leftStickX)
 	default:
 		log.Printf("rx: %x/%x, s=%4.1f", id, b, g.leftStickX)
@@ -308,10 +314,11 @@ func (g *Gamepad) initialize() {
 			}
 		}
 		dev.Call("addEventListener", "inputreport", js.FuncOf(g.rxInputReport))
-		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})))
 		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0xfe, 0x0d, 0x0c, 0x0c, 0x80, 0x00, 0x00})))
-		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x11, 0x08, 0x80, 0x80, 0x00, 0x00, 0x00})))
-		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x21, 0x0c, 0x01, 0x00, 0x01, 0x00, 0x01})))
+		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})))
+		Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0xf5, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})))
+		//Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x11, 0x08, 0x80, 0x80, 0x00, 0x00, 0x00})))
+		//Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x21, 0x0c, 0x01, 0x00, 0x01, 0x00, 0x01})))
 		//Await(dev.Call("sendReport", 0x00, Bytes2JS([]byte{0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})))
 		g.pulse = make(chan float64, 16)
 		go func() {
@@ -325,11 +332,11 @@ func (g *Gamepad) initialize() {
 	}()
 }
 
-func GamepadConnect() {
+func GetGamepad() js.Value {
 	devices, err := Await(hid.Call("getDevices"))
 	if err != nil {
 		alert.Invoke(err.Error())
-		return
+		return js.Null()
 	}
 	fn := js.FuncOf(func(this js.Value, args []js.Value) any {
 		return args[0].Get("vendorId").Int() == vendorId && args[0].Get("productId").Int() == productId
@@ -337,6 +344,14 @@ func GamepadConnect() {
 	dev := devices.Call("find", fn)
 	fn.Release()
 	if dev.IsNull() || dev.IsUndefined() {
+		return js.Null()
+	}
+	return dev
+}
+
+func GamepadConnect() {
+	dev := GetGamepad()
+	if dev.IsNull() {
 		devices, err := Await(hid.Call("requestDevice", map[string]any{
 			"filters": []any{map[string]any{"productId": productId, "vendorId": vendorId}}}))
 		if err != nil {
