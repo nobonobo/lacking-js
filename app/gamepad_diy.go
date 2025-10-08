@@ -412,7 +412,12 @@ func GamepadConnect() {
 		alert.Invoke("No device found")
 		return
 	}
-	fn = js.FuncOf(func(this js.Value, args []js.Value) any {
+	devices, err := Await(hid.Call("getDevices"))
+	if err != nil {
+		alert.Invoke(err.Error())
+		return
+	}
+	fn := js.FuncOf(func(this js.Value, args []js.Value) any {
 		return args[0].Get("vendorId").Int() == vendorId2 && args[0].Get("productId").Int() == productId2
 	})
 	dev2 := devices.Call("find", fn)
