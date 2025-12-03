@@ -288,8 +288,8 @@ func (g *Gamepad) rxInputReport2(this js.Value, args []js.Value) any {
 		axises := []uint16{
 			binary.LittleEndian.Uint16(b[2:4]),  // Axis0: Side
 			binary.LittleEndian.Uint16(b[4:6]),  // Axis1: Throttle
-			binary.LittleEndian.Uint16(b[6:8]),  // Axis2: Clutch
-			binary.LittleEndian.Uint16(b[8:10]), // Axis3: Brake
+			binary.LittleEndian.Uint16(b[6:8]),  // Axis2: Brake
+			binary.LittleEndian.Uint16(b[8:10]), // Axis3: Clutch
 		}
 		side := int(axises[0]) - 10000
 		if side < 0 {
@@ -299,13 +299,13 @@ func (g *Gamepad) rxInputReport2(this js.Value, args []js.Value) any {
 		if throttle < 0 {
 			throttle = 0
 		}
-		clutch := int(axises[2]) - 8000
-		if clutch < 0 {
-			clutch = 0
-		}
-		brake := int(axises[3]) - 8000
+		brake := int(axises[2]) - 8000
 		if brake < 0 {
 			brake = 0
+		}
+		clutch := int(axises[3]) - 8000
+		if clutch < 0 {
+			clutch = 0
 		}
 		g.leftTrigger = dprec.Clamp(float64(brake)/40000, float64(0), float64(1))
 		g.rightTrigger = dprec.Clamp(float64(throttle)/50000, float64(0), float64(1))
