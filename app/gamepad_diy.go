@@ -3,9 +3,9 @@
 package app
 
 import (
-	"encoding/binary"
 	"log"
 	"math"
+	"runtime"
 	"sync"
 	"syscall/js"
 	"time"
@@ -45,6 +45,7 @@ type Gamepad struct {
 	device  js.Value
 	device2 js.Value
 	pulse   chan float64
+	cnt     int
 
 	isDirty     bool
 	isConnected bool
@@ -261,49 +262,50 @@ var (
 )
 
 func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
+	g.cnt++
+	if g.cnt%1000 == 0 {
+		runtime.GC()
+	}
+	/*
+		if g.cnt%10 != 0 {
+			return nil
+		}
+	*/
 	ev := args[0]
 	id := ev.Get("reportId").Int()
-	b := JS2Bytes(ev.Get("data"))
+	data := ev.Get("data")
 	switch id {
 	case 1:
-		axises := []int16{
-			int16(binary.LittleEndian.Uint16(b[0:2])), // Axis0
-		}
-		g.leftStickX = dprec.Clamp(float64(axises[0])/32767, float64(-1), float64(1))
+		steering := int16(data.Call("getUint16", 0, true).Int())
+		g.leftStickX = dprec.Clamp(float64(steering)/32767, float64(-1), float64(1))
 		//log.Printf("rx: %d:%x/%v", id, buttons, axises)
 	default:
-		log.Printf("rx: %x/%x", id, b)
+		//log.Printf("rx: %x/%x", id, b)
 	}
+	data.Set("buffer", js.Null())
 	return nil
 }
 
 func (g *Gamepad) rxInputReport2(this js.Value, args []js.Value) any {
 	ev := args[0]
 	id := ev.Get("reportId").Int()
-	b := JS2Bytes(ev.Get("data"))
+	data := ev.Get("data")
 	switch id {
 	case 3:
-		//buttons := b[0:1]
-		pad := b[1] & 0x0f
-		axises := []uint16{
-			binary.LittleEndian.Uint16(b[2:4]),  // Axis0: Side
-			binary.LittleEndian.Uint16(b[4:6]),  // Axis1: Throttle
-			binary.LittleEndian.Uint16(b[6:8]),  // Axis2: Brake
-			binary.LittleEndian.Uint16(b[8:10]), // Axis3: Clutch
-		}
-		side := int(axises[0]) - 10000
+		pad := data.Call("getUint8", 1).Int() & 0x0f
+		side := int(uint16(data.Call("getUint16", 2, true).Int())) - 10000
 		if side < 0 {
 			side = 0
 		}
-		throttle := int(axises[1]) - 8000
+		throttle := int(uint16(data.Call("getUint16", 4, true).Int())) - 8000
 		if throttle < 0 {
 			throttle = 0
 		}
-		brake := int(axises[2]) - 8000
+		brake := int(uint16(data.Call("getUint16", 6, true).Int())) - 8000
 		if brake < 0 {
 			brake = 0
 		}
-		clutch := int(axises[3]) - 8000
+		clutch := int(uint16(data.Call("getUint16", 8, true).Int())) - 8000
 		if clutch < 0 {
 			clutch = 0
 		}
@@ -315,8 +317,9 @@ func (g *Gamepad) rxInputReport2(this js.Value, args []js.Value) any {
 		g.actionUpButton = dprec.Clamp(float64(clutch)/40000, float64(0), float64(1)) > 0.5
 		//log.Printf("rx: %d:%x/%d/%d %x", id, pad, axises[3], axises[1], b)
 	default:
-		log.Printf("rx: %x/%x", id, b)
+		//log.Printf("rx: %x/%x", id, b)
 	}
+	data.Set("buffer", js.Null())
 	return nil
 }
 
@@ -351,19 +354,19 @@ func (g *Gamepad) initialize() {
 			return
 		}
 		if !dev1.Get("opened").Bool() {
+			dev1.Call("addEventListener", "inputreport", js.FuncOf(g.rxInputReport1))
 			if _, err := Await(dev1.Call("open")); err != nil {
 				alert.Invoke(err.Error())
 				return
 			}
 		}
 		if !dev2.Get("opened").Bool() {
+			dev2.Call("addEventListener", "inputreport", js.FuncOf(g.rxInputReport2))
 			if _, err := Await(dev2.Call("open")); err != nil {
 				alert.Invoke(err.Error())
 				return
 			}
 		}
-		dev1.Call("addEventListener", "inputreport", js.FuncOf(g.rxInputReport1))
-		dev2.Call("addEventListener", "inputreport", js.FuncOf(g.rxInputReport2))
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x04})))
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x03})))
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x01})))
@@ -374,15 +377,33 @@ func (g *Gamepad) initialize() {
 		})))
 		Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
 		g.pulse = make(chan float64, 16)
+		/*
+			done := make(chan struct{})
+			go func() {
+				tick := time.NewTicker(time.Millisecond * 100)
+				for {
+					select {
+					case <-done:
+						return
+					case <-tick.C:
+						runtime.GC()
+					}
+				}
+			}()
+		*/
 		go func() {
+			//defer close(done)
 			for v := range g.pulse {
 				m := int16(dprec.Clamp(v*32767, float64(-32767), float64(32767)))
-				Await(dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)})))
-				Await(dev1.Call("sendReport", 0x01, Bytes2JS([]byte{
-					0x01, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
-					0x00, 0x00, 0x00, 0x00, 0x00,
-				})))
-				Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
+				dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)}))
+				/*
+					Await(dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)})))
+					Await(dev1.Call("sendReport", 0x01, Bytes2JS([]byte{
+						0x01, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
+						0x00, 0x00, 0x00, 0x00, 0x00,
+					})))
+					Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
+				*/
 			}
 		}()
 		g.device = dev1

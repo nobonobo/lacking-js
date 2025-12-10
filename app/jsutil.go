@@ -2,31 +2,23 @@ package app
 
 import "syscall/js"
 
-type wrappedError js.Value
-
-func (w wrappedError) Error() string {
-	return js.Value(w).Call("toString").String()
-}
-
-func (w wrappedError) JSValue() js.Value {
-	return js.Value(w)
-}
-
 // Await equivalent for js await statement.
 func Await(promise js.Value) (res js.Value, err error) {
-	ch := make(chan bool)
-	then := js.FuncOf(func(this js.Value, args []js.Value) any {
+	ch := make(chan struct{})
+	var then js.Func
+	then = js.FuncOf(func(this js.Value, args []js.Value) any {
+		defer then.Release()
 		res = args[0]
 		close(ch)
-		return js.Undefined()
+		return nil
 	})
-	defer then.Release()
-	catch := js.FuncOf(func(this js.Value, args []js.Value) any {
-		err = wrappedError(args[0])
+	var catch js.Func
+	catch = js.FuncOf(func(this js.Value, args []js.Value) any {
+		defer catch.Release()
+		err = js.Error{Value: args[0]}
 		close(ch)
-		return js.Undefined()
+		return nil
 	})
-	defer catch.Release()
 	promise.Call("then", then).Call("catch", catch)
 	<-ch
 	return
@@ -35,7 +27,9 @@ func Await(promise js.Value) (res js.Value, err error) {
 // JS2Bytes convert from TypedArray for JS to byte slice for Go.
 func JS2Bytes(dv js.Value) []byte {
 	b := make([]byte, dv.Get("byteLength").Int())
-	js.CopyBytesToGo(b, js.Global().Get("Uint8Array").New(dv.Get("buffer")))
+	buf := js.Global().Get("Uint8Array").New(dv.Get("buffer"))
+	js.CopyBytesToGo(b, buf)
+	dv.Set("buffer", js.Null())
 	return b
 }
 
@@ -45,3 +39,31 @@ func Bytes2JS(b []byte) js.Value {
 	js.CopyBytesToJS(res, b)
 	return res
 }
+
+/*
+type Promise js.Value
+
+func (g Promise) Then(cb func(value js.Value)) Promise {
+	var jsFunc js.Func
+	jsFunc = js.FuncOf(func(this js.Value, args []js.Value) any {
+		defer jsFunc.Release()
+		cb(args[0])
+		return nil
+	})
+	js.Value(g).Call("then", jsFunc)
+	return g
+}
+
+func (g Promise) Catch(cb func(err error)) Promise {
+	var jsFunc js.Func
+	jsFunc = js.FuncOf(func(this js.Value, args []js.Value) any {
+		defer jsFunc.Release()
+		cb(js.Error{
+			Value: args[0],
+		})
+		return js.Undefined()
+	})
+	js.Value(g).Call("catch", jsFunc)
+	return g
+}
+*/
