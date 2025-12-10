@@ -217,7 +217,12 @@ func (g *Gamepad) jsGamepad() js.Value {
 	if jsGamepads.IsUndefined() || jsGamepads.IsNull() {
 		return js.Null()
 	}
-	return jsGamepads.Index(g.index)
+	for i := 0; i < jsGamepads.Length(); i++ {
+		if !jsGamepads.Index(i).IsUndefined() && !jsGamepads.Index(i).IsNull() {
+			return jsGamepads.Index(i)
+		}
+	}
+	return js.Null()
 }
 
 func (g *Gamepad) refresh() {
