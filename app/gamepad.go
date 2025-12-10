@@ -292,3 +292,5 @@ func deadzoneValue(value, deadzone float64) float64 {
 		return value / (1.0 - deadzone)
 	}
 }
+
+func GamepadConnect() {}
