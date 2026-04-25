@@ -257,6 +257,13 @@ var (
 	hid   = js.Global().Get("navigator").Get("hid")
 )
 
+func mapInt16ToFloat0to1(v, cutOff int) float64 {
+	vv := int(v)
+	vv += 32768 - cutOff
+	ret := float64(vv) / float64(65536-cutOff*2)
+	return dprec.Clamp(ret, 0, 1)
+}
+
 func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
 	g.cnt++
 	if g.cnt%1000 == 0 {
@@ -275,22 +282,10 @@ func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
 		steering := int16(data.Call("getUint16", 0, true).Int())
 		g.leftStickX = dprec.Clamp(float64(steering)/32767, float64(-1), float64(1))
 		const margin = 500
-		brake := int(uint16(data.Call("getUint16", 2, true).Int()))
-		if brake > (32767 - margin) {
-			brake = 32767
-		}
-		if brake < -(32767 - margin) {
-			brake = -32767
-		}
-		g.leftTrigger = dprec.Clamp(float64(brake)/(32767-margin), float64(0), float64(1))
-		throttle := int(uint16(data.Call("getUint16", 8, true).Int()))
-		if throttle > (32767 - margin) {
-			throttle = 32767
-		}
-		if throttle < -(32767 - margin) {
-			throttle = -32767
-		}
-		g.rightTrigger = dprec.Clamp(float64(throttle)/(32767-margin), float64(0), float64(1))
+		brake := int(uint16(data.Call("getUint16", 8, true).Int()))
+		g.leftTrigger = mapInt16ToFloat0to1(brake, margin)
+		throttle := int(uint16(data.Call("getUint16", 2, true).Int()))
+		g.rightTrigger = mapInt16ToFloat0to1(throttle, margin)
 		//log.Printf("rx: %d:%x/%v", id, buttons, axises)
 	default:
 		//log.Printf("rx: %x/%x", id, b)
