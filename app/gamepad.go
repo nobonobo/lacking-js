@@ -1,4 +1,4 @@
-//go:build !diy && !dfp
+//go:build !diy && !dfp && !roller
 
 package app
 
