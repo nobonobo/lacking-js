@@ -274,10 +274,17 @@ func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
 	case 1:
 		steering := int16(data.Call("getUint16", 0, true).Int())
 		g.leftStickX = dprec.Clamp(float64(steering)/32767, float64(-1), float64(1))
-		throttle := int(uint16(data.Call("getUint16", 2, true).Int()))
-		g.rightTrigger = dprec.Clamp(float64(throttle)/32767, float64(0), float64(1))
-		brake := int(uint16(data.Call("getUint16", 8, true).Int()))
-		g.leftTrigger = dprec.Clamp(float64(brake)/32767, float64(0), float64(1))
+		const margin = 500
+		brake := int(uint16(data.Call("getUint16", 2, true).Int())) - margin
+		if brake < 0 {
+			brake = 0
+		}
+		g.leftTrigger = dprec.Clamp(float64(brake)/(32767-margin), float64(0), float64(1))
+		throttle := int(uint16(data.Call("getUint16", 8, true).Int())) - margin
+		if throttle < 0 {
+			throttle = 0
+		}
+		g.rightTrigger = dprec.Clamp(float64(throttle)/(32767-margin), float64(0), float64(1))
 		//log.Printf("rx: %d:%x/%v", id, buttons, axises)
 	default:
 		//log.Printf("rx: %x/%x", id, b)
