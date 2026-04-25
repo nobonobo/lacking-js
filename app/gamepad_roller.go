@@ -43,7 +43,6 @@ type Gamepad struct {
 
 	connect func()
 	device  js.Value
-	device2 js.Value
 	pulse   chan float64
 	cnt     int
 
@@ -354,9 +353,7 @@ func (g *Gamepad) initialize() {
 			}
 		}()
 		g.device = dev1
-		g.device2 = dev2
 		log.Println("connect:", g.device.Get("productName"))
-		log.Println("connect:", g.device2.Get("productName"))
 	}()
 }
 
@@ -394,11 +391,6 @@ func GamepadConnect() {
 	}
 	if dev.IsNull() {
 		alert.Invoke("No device found")
-		return
-	}
-	devices, err := Await(hid.Call("getDevices"))
-	if err != nil {
-		alert.Invoke(err.Error())
 		return
 	}
 	log.Println(dev.Get("productName").String())
