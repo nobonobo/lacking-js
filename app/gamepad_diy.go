@@ -276,7 +276,7 @@ func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
 	data := ev.Get("data")
 	switch id {
 	case 1:
-		steering := int16(data.Call("getUint16", 0, true).Int())
+		steering := int16(data.Call("getUint16", 3, true).Int())
 		g.leftStickX = dprec.Clamp(float64(steering)/32767, float64(-1), float64(1))
 		//log.Printf("rx: %d:%x/%v", id, buttons, axises)
 	default:
@@ -369,13 +369,14 @@ func (g *Gamepad) initialize() {
 		}
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x04})))
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x03})))
+		Await(dev1.Call("sendReport", 0x0d, Bytes2JS([]byte{0xff})))
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x01})))
-		Await(dev1.Call("sendReport", 0x00, Bytes2JS([]byte{0x01, 0x00, 0x00})))
+		Await(dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, 0x00, 0x00})))
 		Await(dev1.Call("sendReport", 0x01, Bytes2JS([]byte{
 			0x01, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
 			0x00, 0x00, 0x00, 0x00, 0x00,
 		})))
-		Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
+		Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0xff})))
 		g.pulse = make(chan float64, 16)
 		/*
 			done := make(chan struct{})

@@ -14,7 +14,7 @@ import (
 	"github.com/mokiat/lacking/app"
 )
 
-const ForceRate = 0.15
+const ForceRate = 0.05
 
 // NOTE: Chrome does not follow the specification and the Gamepad object
 // reference cannot be stored and reused. It contains a snapshot of some
@@ -259,8 +259,8 @@ var (
 
 func mapInt16ToFloat0to1(v, cutOff int) float64 {
 	vv := int(v)
-	vv += 32768 - cutOff
-	return dprec.Clamp(float64(vv)/float64(65536-cutOff*2), 0.0, 1.0)
+	vv -= cutOff
+	return dprec.Clamp(float64(vv)/float64(32768-cutOff*2), 0.0, 1.0)
 }
 
 func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
@@ -268,26 +268,24 @@ func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
 	if g.cnt%1000 == 0 {
 		runtime.GC()
 	}
-	/*
-		if g.cnt%10 != 0 {
-			return nil
-		}
-	*/
+	if g.cnt%4 != 0 {
+		return nil
+	}
 	ev := args[0]
 	id := ev.Get("reportId").Int()
 	data := ev.Get("data")
 	switch id {
 	case 1:
-		steering := int16(data.Call("getUint16", 0, true).Int())
+		steering := int16(data.Call("getUint16", 3, true).Int())
 		g.leftStickX = dprec.Clamp(float64(steering)/32767, float64(-1), float64(1))
-		const margin = 500
-		brake := int(int16(data.Call("getUint16", 8, true).Int()))
+		const margin = 1000
+		brake := int(int16(data.Call("getUint16", 13, true).Int()))
 		g.leftTrigger = mapInt16ToFloat0to1(brake, margin)
-		throttle := int(int16(data.Call("getUint16", 2, true).Int()))
+		throttle := int(int16(data.Call("getUint16", 11, true).Int()))
 		g.rightTrigger = mapInt16ToFloat0to1(throttle, margin)
 		//log.Printf("leftTrigger: %d,%f, rightTrigger: %d,%f", brake, g.leftTrigger, throttle, g.rightTrigger)
 	default:
-		//log.Printf("rx: %x/%x", id, b)
+		//log.Printf("rx: %x/%x", id, data)
 	}
 	data.Set("buffer", js.Null())
 	return nil
@@ -320,15 +318,15 @@ func (g *Gamepad) initialize() {
 				return
 			}
 		}
-		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x04})))
-		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x03})))
+		//Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x04})))
+		//Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x03})))
 		Await(dev1.Call("sendReport", 0x0c, Bytes2JS([]byte{0x01})))
-		Await(dev1.Call("sendReport", 0x00, Bytes2JS([]byte{0x01, 0x00, 0x00})))
 		Await(dev1.Call("sendReport", 0x01, Bytes2JS([]byte{
-			0x01, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
+			0x01, 0x01, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
 			0x00, 0x00, 0x00, 0x00, 0x00,
 		})))
-		Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
+		Await(dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, 0x00, 0x00})))
+		Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0xff})))
 		g.pulse = make(chan float64, 16)
 		/*
 			done := make(chan struct{})
@@ -348,15 +346,13 @@ func (g *Gamepad) initialize() {
 			//defer close(done)
 			for v := range g.pulse {
 				m := int16(dprec.Clamp(v*32767, float64(-32767), float64(32767)))
-				dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)}))
-				/*
-					Await(dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)})))
-					Await(dev1.Call("sendReport", 0x01, Bytes2JS([]byte{
-						0x01, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
-						0x00, 0x00, 0x00, 0x00, 0x00,
-					})))
-					Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
-				*/
+				//dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)}))
+				Await(dev1.Call("sendReport", 0x05, Bytes2JS([]byte{0x01, byte(m & 0xff), byte(m >> 8)})))
+				Await(dev1.Call("sendReport", 0x01, Bytes2JS([]byte{
+					0x01, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x3f,
+					0x00, 0x00, 0x00, 0x00, 0x00,
+				})))
+				Await(dev1.Call("sendReport", 0x0a, Bytes2JS([]byte{0x01, 0x01, 0x01})))
 			}
 		}()
 		g.device = dev1
