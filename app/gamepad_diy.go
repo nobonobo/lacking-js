@@ -276,7 +276,7 @@ func (g *Gamepad) rxInputReport1(this js.Value, args []js.Value) any {
 	data := ev.Get("data")
 	switch id {
 	case 1:
-		steering := int16(data.Call("getUint16", 3, true).Int())
+		steering := int16(data.Call("getUint16", 0, true).Int())
 		g.leftStickX = dprec.Clamp(float64(steering)/32767, float64(-1), float64(1))
 		//log.Printf("rx: %d:%x/%v", id, buttons, axises)
 	default:
